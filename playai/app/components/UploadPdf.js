@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import PdfCompress from '../services/Compress';
+import { pdfFirebase } from '../services/PdfFirebase';
 
 export default function UploadPdf({ onPdfUpload }) {
   const [uploading, setUploading] = useState(false);
@@ -14,8 +15,26 @@ export default function UploadPdf({ onPdfUpload }) {
         throw new Error('Please upload a PDF file');
       }
 
+      // Process the PDF
       const processedPdf = await PdfCompress.compressPdf(file);
-      onPdfUpload(processedPdf);
+      
+      // Upload to Firebase
+      const firebaseResult = await pdfFirebase.uploadPdf(
+        file,
+        processedPdf.data,
+        {
+          pageCount: processedPdf.numPages,
+          size: processedPdf.size
+        }
+      );
+
+      // Combine the data
+      const combinedData = {
+        ...processedPdf,
+        _id: firebaseResult._id,
+      };
+
+      onPdfUpload(combinedData);
     } catch (error) {
       console.error('Error processing PDF:', error);
       alert(error.message);

@@ -1,62 +1,48 @@
-import Pako from "pako";
-import { PDFDocument } from "pdf-lib";
-import PdfAVLTree from "../components/TreeNode";
+import { getDocument } from 'pdfjs-dist';
+import pako from 'pako';
 
-class PdfCompress {
-    static async compressPdf(file) {
-        try {
-            const arrayBuffer = await file.arrayBuffer();
-            const documentPdf = await PDFDocument.load(arrayBuffer);
-            const pageCount = documentPdf.getPageCount();
-            
-            // Dynamic batch size based on file size and page count
-            const batchSize = this.calculateOptimalBatchSize(file.size, pageCount);
-            const tree = new PdfAVLTree();
-
-
-            const pdfBytes = await documentPdf.save();
-            const compressed = await this.compressBatch(pdfBytes);
-            tree.root = tree.insert(tree.root, compressed, 1, pageCount);
-
-
-            return {
-                id: Date.now(),
-                name: file.name,
-                size: file.size,
-                pageCount,
-                tree: tree,
-                metadata: {
-                    lastModified: file.lastModified,
-                    type: file.type,
-                    batchSize
-                }
-            };
-        } catch (error) {
-            console.error('Error compressing PDF:', error);
-            throw new Error('Failed to process PDF file');
-        }
+const PdfCompress = {
+  async compressPdf(file) {
+    try {
+      // Get the file's ArrayBuffer and create a copy.
+      const arrayBuffer = await file.arrayBuffer();
+      const bufferCopy = arrayBuffer.slice(0);
+      
+      // Create a Uint8Array from the copy
+      const pdfData = new Uint8Array(bufferCopy);
+      
+      // Use pako to compress the PDF data
+      const compressedData = pako.deflate(pdfData);
+      
+      // For pdfjs-dist, make another copy (to prevent detachment issues)
+      const pdfDataForPdfjs = pdfData.slice();
+      const pdf = await getDocument({ data: pdfDataForPdfjs }).promise;
+      const numPages = pdf.numPages;
+      
+      return {
+        // Use compressed data for Firestore upload
+        data: compressedData,
+        name: file.name,
+        size: file.size,
+        numPages: numPages,
+        type: file.type,
+        lastModified: file.lastModified
+      };
+    } catch (error) {
+      console.error('Error compressing PDF:', error);
+      throw error;
     }
+  },
 
-    static calculateOptimalBatchSize(fileSize, pageCount) {
-        const baseSize = 5;
-        const sizeFactor = Math.floor(fileSize / (1024 * 1024)); // Size in MB
-        return Math.max(2, Math.min(baseSize - sizeFactor, pageCount));
+  async decompressPdf(compressedData) {
+    try {
+      const decompressedData = pako.inflate(compressedData);
+      return decompressedData;
+    } catch (error) {
+      console.error('Error decompressing PDF:', error);
+      throw error;
     }
-
-    static async compressBatch(batch) {
-        const compressionLevel = 6;
-        return Pako.deflate(new Uint8Array(batch), { level: compressionLevel });
-    }
-
-    static async decompressPdf(compressedData) {
-        try {
-            const decompressed = Pako.inflate(compressedData);
-            return decompressed;
-        } catch (error) {
-            console.error('Error decompressing PDF:', error);
-            throw new Error('Failed to decompress PDF data');
-        }
-    }
-}
+  }
+};
 
 export default PdfCompress;
