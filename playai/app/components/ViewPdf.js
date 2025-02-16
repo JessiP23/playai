@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import Loading from "./Loading";
 import dynamic from "next/dynamic";
 import PdfCompress from "../services/Compress";
 import "react-pdf/dist/esm/Page/AnnotationLayer.css";
 import "react-pdf/dist/esm/Page/TextLayer.css";
+import AudioControl from "./Audio";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -18,6 +19,16 @@ function ViewPdf({ pdfData }) {
   const [loading, setLoading] = useState(false);
   const [scale, setScale] = useState(1.0);
   const [error, setError] = useState(null);
+
+  // pass audio control features
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [audioUrl, setAudioUrl] = useState(null);
+  const audioRef = useRef(null);
+
+  const [voices, setVoices] = useState([]);
+  const [selectedVoice, setSelectedVoice] = useState(null);
+
+  const [pageText, setPageText] = useState('');
 
   async function loadPdfContent() {
     if (!pdfData) return;
@@ -41,7 +52,7 @@ function ViewPdf({ pdfData }) {
     } finally {
       setLoading(false);
     }
-  }
+  };
 
   useEffect(() => {
     return () => {
@@ -55,6 +66,20 @@ function ViewPdf({ pdfData }) {
     loadPdfContent();
   }, [pageNumber, pdfData]);
 
+  useEffect(() => {
+    async function fetchVoices() {
+        try {
+            const response = await fetch('http://localhost:3001/api/voices');
+            const voiceData = await response.json();
+            setVoices(voiceData);
+            setSelectedVoice(voiceData[0]); // Set default voice
+        } catch (error) {
+            console.error('Error fetching voices:', error);
+        }
+    }
+    fetchVoices();
+}, []);
+
   function onDocumentLoadSuccess({ numPages }) {
     setNumPages(numPages);
   }
@@ -66,6 +91,67 @@ function ViewPdf({ pdfData }) {
   function prevPage() {
     setPageNumber((prev) => Math.max(prev - 1, 1));
   }
+
+  const extractTextFromPage = async (page) => {
+    try {
+      const textContent = await page.getTextContent();
+      const text = textContent.items
+        .map(item => item.str)
+        .join(' ')
+        .trim();
+      setPageText(text);
+      return text;
+    } catch (error) {
+      console.error('Error extracting text:', error);
+      return '';
+    }
+  };
+
+  // Modify the handlePlayPause function
+  const handlePlayPause = async (play, content) => {
+    if (play) {
+        try {
+            if (!pageText) {
+                throw new Error('No text content available');
+            }
+
+            const response = await fetch('http://localhost:3001/api/text-to-speech', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    text: pageText,
+                    voice: selectedVoice,
+                }),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to generate audio');
+            }
+
+            const audioBlob = await response.blob();
+            const audioUrl = URL.createObjectURL(audioBlob);
+            
+            if (audioRef.current) {
+                audioRef.current.src = audioUrl;
+                await audioRef.current.play();
+                setIsPlaying(true);
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert(error.message);
+            setIsPlaying(false);
+        }
+    } else {
+        if (audioRef.current) {
+            audioRef.current.pause();
+            audioRef.current.currentTime = 0;
+        }
+        setIsPlaying(false);
+    }
+  };
 
   if (error) {
     return (
@@ -112,6 +198,9 @@ function ViewPdf({ pdfData }) {
               scale={scale}
               renderTextLayer={true}
               renderAnnotationLayer={true}
+              onLoadSuccess={async (page) => {
+                await extractTextFromPage(page);
+              }}
             />
           </Document>
         )}
@@ -128,9 +217,19 @@ function ViewPdf({ pdfData }) {
         </button>
         
         <div className="flex items-center space-x-2">
-          <span>
-            Page {pageNumber} of {numPages || "?"}
-          </span>
+          <div className="flex items-center gap-2">
+            <span>Page {pageNumber} of {numPages}</span>
+            <AudioControl
+              isPlaying={isPlaying}
+              onPlayPause={handlePlayPause}
+            />
+          </div>
+          <audio
+            ref={audioRef}
+            src={audioUrl}
+            onEnded={() => setIsPlaying(false)}
+            hidden
+          />
           <input
             type="number"
             min={1}
@@ -144,6 +243,20 @@ function ViewPdf({ pdfData }) {
             }}
             className="w-16 px-2 py-1 border rounded"
           />
+          <select 
+                    value={selectedVoice?.name || ''}
+                    onChange={(e) => {
+                        const voice = voices.find(v => v.name === e.target.value);
+                        setSelectedVoice(voice);
+                    }}
+                    className="border rounded px-2 py-1"
+                >
+                    {voices.map(voice => (
+                        <option key={voice.name} value={voice.name}>
+                            {voice.name} ({voice.accent})
+                        </option>
+                    ))}
+                </select>
         </div>
 
         <button
