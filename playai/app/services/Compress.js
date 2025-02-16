@@ -1,52 +1,61 @@
-// compress/decompress files
 import Pako from "pako";
 import { PDFDocument } from "pdf-lib";
-import { metadata } from "../layout";
+import PdfAVLTree from "../components/TreeNode";
 
 class PdfCompress {
     static async compressPdf(file) {
-        const arrayBuffer = await file.arrayBuffer();
+        try {
+            const arrayBuffer = await file.arrayBuffer();
+            const documentPdf = await PDFDocument.load(arrayBuffer);
+            const pageCount = documentPdf.getPageCount();
+            
+            // Dynamic batch size based on file size and page count
+            const batchSize = this.calculateOptimalBatchSize(file.size, pageCount);
+            const tree = new PdfAVLTree();
 
-        const documentPdf = await PDFDocument.load(arrayBuffer);
 
-        const pdfBytes = await documentPdf.save();
+            const pdfBytes = await documentPdf.save();
+            const compressed = await this.compressBatch(pdfBytes);
+            tree.root = tree.insert(tree.root, compressed, 1, pageCount);
 
-        // obtain size pages and count for pdf file
-        const pageCount = documentPdf.getPageCount();
 
-        // create batches of pages to load by clicking te next/prev button
-        const batches = [];
-        const batchSize = 5;
-
-        for (let i = 0; i < pageCount; i += batchSize) {
-            const batch = arrayBuffer.slice(i * (arrayBuffer.byteLength / pageCount), Math.min((i + batchSize) * (arrayBuffer.byteLength / pageCount), arrayBuffer.byteLength));
-
-            // compress each batch
-            const batchBeingCompressed = Pako.deflate(new Uint8Array(batch));
-            batches.push({
-                start: i,
-                end: Math.min(i + batchSize - 1, pageCount - 1),
-                data: batchBeingCompressed
-            });
-        };
-
-        return {
-            id: Date.now(),
-            name: file.name,
-            pageCount,
-            batches,
-            pdfBytes,
-            metadata: {
+            return {
+                id: Date.now(),
+                name: file.name,
                 size: file.size,
-                type: file.type,
-                lastModified: file.lastModified,
-            }
-        };
+                pageCount,
+                tree: tree,
+                metadata: {
+                    lastModified: file.lastModified,
+                    type: file.type,
+                    batchSize
+                }
+            };
+        } catch (error) {
+            console.error('Error compressing PDF:', error);
+            throw new Error('Failed to process PDF file');
+        }
     }
 
-    static async decompressPdf(batch) {
-        const pdfDecompressed = Pako.inflate(batch.data);
-        return pdfDecompressed;
+    static calculateOptimalBatchSize(fileSize, pageCount) {
+        const baseSize = 5;
+        const sizeFactor = Math.floor(fileSize / (1024 * 1024)); // Size in MB
+        return Math.max(2, Math.min(baseSize - sizeFactor, pageCount));
+    }
+
+    static async compressBatch(batch) {
+        const compressionLevel = 6;
+        return Pako.deflate(new Uint8Array(batch), { level: compressionLevel });
+    }
+
+    static async decompressPdf(compressedData) {
+        try {
+            const decompressed = Pako.inflate(compressedData);
+            return decompressed;
+        } catch (error) {
+            console.error('Error decompressing PDF:', error);
+            throw new Error('Failed to decompress PDF data');
+        }
     }
 }
 
