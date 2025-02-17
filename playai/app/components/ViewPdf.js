@@ -1,14 +1,18 @@
 'use client';
 
-import { useState, useEffect, useRef, use } from "react";
-import { Document, Page, pdfjs } from "react-pdf";
+import { useState, useEffect, useRef } from "react";
+import { Document, Page } from "react-pdf";
 import Loading from "./Loading";
 import AudioControl from "./Audio";
 import PdfCompress from "../services/Compress";
-import "react-pdf/dist/esm/Page/AnnotationLayer.css";
-import "react-pdf/dist/esm/Page/TextLayer.css";
+import { pdfjs } from "react-pdf";
+import 'react-pdf/dist/Page/TextLayer.css';
+import 'react-pdf/dist/Page/AnnotationLayer.css'; 
 
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url,
+).toString();
 
 function chunkText(text, chunkSize = 10) {
   const words = text.split(/\s+/);
@@ -26,11 +30,9 @@ function ViewPdf({ pdfData }) {
   const [loading, setLoading] = useState(false);
   const [scale, setScale] = useState(1.0);
   const [error, setError] = useState(null);
-  const [audioCache, setAudioCache] = useState({});
 
   // pass audio control features
   const [isPlaying, setIsPlaying] = useState(false);
-  const [audioUrl, setAudioUrl] = useState(null);
   const audioRef = useRef(null);
 
   const [voices, setVoices] = useState([]);
@@ -39,6 +41,7 @@ function ViewPdf({ pdfData }) {
   const [chunks, setChunks] = useState([]);
   const [currentChunkIndex, setCurrentChunkIndex] = useState(0);
   const [chunkCache, setChunkCache] = useState({});
+  const [pdfInstance, setPdfInstance] = useState(null);
 
   async function loadPdfContent() {
     if (!pdfData) return;
@@ -49,8 +52,7 @@ function ViewPdf({ pdfData }) {
       if (node) {
         const decompressedContent = await PdfCompress.decompressPdf(node.data);
         const blob = new Blob([decompressedContent], { type: 'application/pdf' });
-        const url = URL.createObjectURL(blob);
-        setContent(url);
+        setContent(blob);
       }
     } catch (err) {
       console.error("Error loading PDF page:", err);
@@ -61,16 +63,31 @@ function ViewPdf({ pdfData }) {
   }
 
   useEffect(() => {
-    return () => {
-      if (content) {
-        URL.revokeObjectURL(content);
-      }
-    };
-  }, [content]);
-
-  useEffect(() => {
     loadPdfContent();
   }, [pageNumber, pdfData]);
+
+  const PdfViewer = () => (
+    <Document
+      file={content}
+      onLoadSuccess={({ numPages }) => setNumPages(numPages)}
+      loading={<Loading />}
+      className="flex justify-center"
+    >
+      <Page
+        pageNumber={pageNumber}
+        scale={scale}
+        renderTextLayer={true}
+        renderAnnotationLayer={true}
+        onLoadSuccess={async (page) => {
+          // Extract text for audio functionality
+          const textContent = await page.getTextContent();
+          const text = textContent.items.map(item => item.str).join(' ').trim();
+          setPageText(text);
+          setChunks(chunkText(text)); 
+        }}
+      />
+    </Document>
+  );
 
   useEffect(() => {
     async function fetchVoices() {
@@ -123,25 +140,36 @@ function ViewPdf({ pdfData }) {
   const fetchChunkAudio = async (chunk) => {
     const cacheKey = `${chunk}-${selectedVoice.value}`;
     if (chunkCache[cacheKey]) return chunkCache[cacheKey];
-
-    const response = await fetch('http://localhost:3001/api/text-to-speech', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        text: chunk,
-        voice: selectedVoice,
-      }),
-    });
-    
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || 'Failed to generate audio for chunk');
+  
+    try {
+      const response = await fetch('http://localhost:3001/api/text-to-speech', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache'
+        },
+        body: JSON.stringify({
+          text: chunk,
+          voice: selectedVoice,
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to generate audio');
+      }
+      
+      const blob = await response.blob();
+      if (blob.size === 0) {
+        throw new Error('Empty audio response');
+      }
+      
+      const audioUrl = URL.createObjectURL(new Blob([blob], { type: 'audio/mp3' }));
+      setChunkCache(prev => ({ ...prev, [cacheKey]: audioUrl }));
+      return audioUrl;
+    } catch (error) {
+      console.error('Audio fetch error:', error);
+      throw error;
     }
-    
-    const audioBlob = await response.blob();
-    const audioUrl = URL.createObjectURL(audioBlob);
-    setChunkCache(prev => ({ ...prev, [cacheKey]: audioUrl }));
-    return audioUrl;
   };
 
   // Modify the handlePlayPause function
@@ -203,37 +231,79 @@ function ViewPdf({ pdfData }) {
   };
 
   const handleChunkEnd = async () => {
-    const nextIndex = currentChunkIndex + 1;
-    if (nextIndex < chunks.length) {
-      const nextChunk = chunks[nextIndex];
-      const cacheKey = `${nextChunk}-${selectedVoice.value}`;
-      let nextAudioUrl = chunkCache[cacheKey];
-      if (!nextAudioUrl) {
-        // If prefetching did not complete, fetch now.
-        nextAudioUrl = await fetchChunkAudio(nextChunk);
+    try {
+      const nextIndex = currentChunkIndex + 1;
+      
+      // Clean up current audio URL
+      if (audioRef.current?.src) {
+        URL.revokeObjectURL(audioRef.current.src);
       }
-      audioRef.current.src = nextAudioUrl;
-      setCurrentChunkIndex(nextIndex);
-      await audioRef.current.play();
-      // Prefetch the subsequent chunk to keep audio seamless.
-      const followingIndex = nextIndex + 1;
-      if (followingIndex < chunks.length) {
-        const followingChunk = chunks[followingIndex];
-        const followingCacheKey = `${followingChunk}-${selectedVoice.value}`;
-        if (!chunkCache[followingCacheKey]) {
-          fetchChunkAudio(followingChunk);
+  
+      if (nextIndex < chunks.length) {
+        const nextChunk = chunks[nextIndex];
+        const cacheKey = `${nextChunk}-${selectedVoice.value}`;
+        
+        try {
+          const nextAudioUrl = chunkCache[cacheKey] || await fetchChunkAudio(nextChunk);
+          
+          if (!audioRef.current) return;
+          
+          audioRef.current.src = nextAudioUrl;
+          setCurrentChunkIndex(nextIndex);
+          
+          const playPromise = audioRef.current.play();
+          if (playPromise) {
+            await playPromise;
+          }
+  
+          // Prefetch next chunk
+          const followingIndex = nextIndex + 1;
+          if (followingIndex < chunks.length) {
+            const followingChunk = chunks[followingIndex];
+            const followingCacheKey = `${followingChunk}-${selectedVoice.value}`;
+            if (!chunkCache[followingCacheKey]) {
+              fetchChunkAudio(followingChunk).catch(console.error);
+            }
+          }
+        } catch (error) {
+          console.error('Audio playback error:', error);
+          setIsPlaying(false);
         }
+      } else {
+        if (audioRef.current) {
+          audioRef.current.src = '';
+        }
+        setCurrentChunkIndex(0);
+        setIsPlaying(false);
       }
-    } else {
-      // All chunks played - reset playback if desired.
-      setCurrentChunkIndex(0);
+    } catch (error) {
+      console.error('Chunk end error:', error);
       setIsPlaying(false);
     }
   };
 
   useEffect(() => {
+    return () => {
+      // Cleanup audio resources on unmount
+      if (audioRef.current?.src) {
+        URL.revokeObjectURL(audioRef.current.src);
+        audioRef.current.src = '';
+      }
+      // Cleanup cached audio URLs
+      Object.values(chunkCache).forEach(url => {
+        URL.revokeObjectURL(url);
+      });
+    };
+  }, []);
+  
+  // Update the audio setup effect
+  useEffect(() => {
     if (audioRef.current) {
       audioRef.current.onended = handleChunkEnd;
+      audioRef.current.onerror = (e) => {
+        console.error('Audio error:', e);
+        setIsPlaying(false);
+      };
     }
   }, [chunks, currentChunkIndex]);
 
@@ -304,30 +374,19 @@ function ViewPdf({ pdfData }) {
       <div className="flex-1 overflow-auto p-4">
         {loading ? (
           <Loading />
+        ) : error ? (
+          <div className="flex items-center justify-center h-full text-red-500">
+            {error}
+          </div>
         ) : (
-          <Document
-            file={content}
-            onLoadSuccess={onDocumentLoadSuccess}
-            loading={<Loading />}
-            className="flex justify-center"
-          >
-            <Page
-              pageNumber={pageNumber}
-              scale={scale}
-              renderTextLayer={true}
-              renderAnnotationLayer={true}
-              onLoadSuccess={async (page) => {
-                await extractTextFromPage(page);
-              }}
-            />
-          </Document>
+          <PdfViewer />
         )}
       </div>
 
       {/* Navigation controls */}
       <div className="flex items-center justify-between p-4 border-t bg-white">
         <button
-          onClick={prevPage}
+          onClick={() => setPageNumber(prev => Math.max(prev - 1, 1))}
           disabled={pageNumber <= 1}
           className="px-4 py-2 bg-gray-200 rounded disabled:opacity-50 hover:bg-gray-300"
         >
@@ -373,13 +432,14 @@ function ViewPdf({ pdfData }) {
         </div>
 
         <button
-          onClick={nextPage}
+          onClick={() => setPageNumber(prev => Math.min(prev + 1, numPages || 1))}
           disabled={pageNumber >= (numPages || 1)}
           className="px-4 py-2 bg-gray-200 rounded disabled:opacity-50 hover:bg-gray-300"
         >
           Next
         </button>
       </div>
+      {/* <PdfDoc /> */}
     </div>
   );
 }
