@@ -2,8 +2,16 @@ const express = require('express');
 const cors = require('cors');
 // dropdown voice aget
 const voices = require('./voices/list-voices.js');
+const NodeCache = require('node-cache');
 
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+
+// audio takes so long to load
+// cache audio for 1 hour
+// 60 sec = 1 min
+// 60 min = 1 hour
+// 60 * 60 = 3600 sec
+const cacheAudio = new NodeCache({stdTTL: 3600});
 
 const app = express();
 app.use(cors());
@@ -20,18 +28,20 @@ app.post('/api/text-to-speech', async (req, res) => {
     try {
         const { text, voice } = req.body;
 
-        if (!text || text.trim().length === 0) {
-            return res.status(400).json({ error: 'Text content is required' });
-        }
+        // cache temporarily text and audio
+        const cacheKey = `${text}-${voice.value}`;
+        const cachedAudio = cacheAudio.get(cacheKey);
 
-        if (!voice || !voice.value) {
-            return res.status(400).json({ error: 'Voice configuration is required' });
+        if (cachedAudio) {
+            res.setHeader('Content-Type', 'audio/mp3');
+            res.setHeader('Cache-Control', 'public, max-age=3600');
+            return res.send(cachedAudio);
         }
 
         const options = {
             method: 'POST',
             headers: {
-                'AUTHORIZATION': 
+                'Authorization': 
                 PLAYAI_API_KEY,
                 'X-USER-ID': PLAYAI_USER_ID,
                 'Content-Type': 'application/json'
@@ -58,7 +68,10 @@ app.post('/api/text-to-speech', async (req, res) => {
         }
 
         const audioContent = await response.buffer();
+
+        cacheAudio.set(cacheKey, audioContent);
         res.setHeader('Content-Type', 'audio/mp3');
+        res.setHeader('Cache-Control', 'public, max-age=3600');
         res.send(audioContent);
     } catch (error) {
         console.error('Text-to-speech error:', error);
