@@ -22,11 +22,14 @@ const PDF_OPTIONS = {
   disableStream: true,
 }
 
-function chunkText(text, chunkSize = 10) {
-  const words = text.split(/\s+/);
+function chunkText(text, chunkSize = 25) { 
+  const words = text.split(/\s+/).filter(word => word.length > 0); // Filter empty strings
   let chunks = [];
   for (let i = 0; i < words.length; i += chunkSize) {
-    chunks.push(words.slice(i, i + chunkSize).join(' '));
+    const chunk = words.slice(i, i + chunkSize).join(' ').trim();
+
+    // filter empty strings
+    if (chunk) chunks.push(chunk); 
   }
   return chunks;
 }
@@ -76,10 +79,13 @@ function ViewPdf({ pdfData }) {
 
   const handleLoadSuccess = useCallback(async (page) => {
     try {
-      const textContent = await page.getTextContent();
-      const text = textContent.items.map(item => item.str).join(' ').trim();
-      setPageText(text);
-      setChunks(chunkText(text));
+      const extractedText = await extractTextFromPage(page);
+
+      if (!extractedText) {
+        console.warn('No text extracted from the page');
+        return;
+      }
+      console.log('Successfulle extracted text:', extractedText);
     } catch (error) {
       console.error('Error extracting text:', error);
     }
@@ -138,8 +144,22 @@ function ViewPdf({ pdfData }) {
     try {
       const textContent = await page.getTextContent();
       const text = textContent.items.map(item => item.str).join(' ').trim();
+      console.log('Text extraction stats:', {
+        totalLength: text.length,
+        firstFewWords: text.substring(0, 50) + '...'
+      });
+  
+      if (!text) {
+        console.warn('Extracted text is empty');
+        return '';
+      }
       setPageText(text);
-      const textChunks = chunkText(text, 10);
+      const textChunks = chunkText(text, 25);
+      console.log('Chunk statistics:', {
+        numberOfChunks: textChunks.length,
+        firstChunkLength: textChunks[0]?.length || 0,
+        averageChunkLength: textChunks.reduce((acc, chunk) => acc + chunk.length, 0) / textChunks.length
+      });
       setChunks(textChunks);
       setCurrentChunkIndex(0);
       return text;
@@ -161,6 +181,11 @@ function ViewPdf({ pdfData }) {
     if (chunkCache[cacheKey]) return chunkCache[cacheKey];
   
     try {
+      console.log('Sending chunk:', { 
+        chunkLength: chunk.length, 
+        chunk: chunk.substring(0, 50) + '...',
+        voice: selectedVoice.name 
+      });
       const response = await fetch('http://localhost:3001/api/text-to-speech', {
         method: 'POST',
         headers: { 
@@ -178,6 +203,10 @@ function ViewPdf({ pdfData }) {
       }
       
       const blob = await response.blob();
+      console.log("Received blob:", {
+        size: blob.size,
+        type: blob.type,
+      })
       if (blob.size === 0) {
         throw new Error('Empty audio response');
       }
