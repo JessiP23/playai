@@ -3,9 +3,10 @@ const cors = require('cors');
 // dropdown voice aget
 const voices = require('./voices/list-voices.js');
 const NodeCache = require('node-cache');
+const https = require('https');
 
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
-
+const agent = new https.Agent({keepAlive: true});
 // audio takes so long to load
 // cache audio for 1 hour
 // 60 sec = 1 min
@@ -54,7 +55,9 @@ app.post('/api/text-to-speech', async (req, res) => {
                 speed: 1,
                 sampleRate: 24000,
                 language: "english"
-            })
+            }),
+            // persistence 
+            agent
         };
         console.log('Text-to-speech request:', options);
 

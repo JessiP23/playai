@@ -108,8 +108,14 @@ function ViewPdf({ pdfData }) {
       setCurrentChunkIndex(0);
       return text;
     } catch (error) {
-      console.error('Error extracting text:', error);
-      return '';
+      // Warning: AbortException: TextLayer task cancelled.
+      if (error.name === "AbortException") {
+        // Ignore AbortException as it is expected during quick navigation or unmount.
+        console.warn("Text extraction aborted:", error.message);
+      } else {
+        console.error("Error extracting text:", error);
+      }
+      return "";
     }
   };
 
