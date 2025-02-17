@@ -1,11 +1,26 @@
+/**
+ * 
+ * Insert: O(log n)
+Search: O(log n)
+Memory: O(n)
+Height: Always ≤ 1.44 log₂(n+2) - 0.328
+ * 
+ */
+
 export class TreeNodePdf {
     constructor(data, start, end) {
-        this.data = data;
-        this.start = start; 
-        this.end = end;
-        this.left = null;
-        this.right = null;
-        this.height = 1;
+        // Compressed PDF page data
+        this.data = data;        
+         // Starting page number
+        this.start = start;       
+         // Ending page number
+        this.end = end;           
+        // Left subtree
+        this.left = null;         
+        // Right subtree
+        this.right = null;        
+        // Height for balancing
+        this.height = 1;          
     }
 }
 
