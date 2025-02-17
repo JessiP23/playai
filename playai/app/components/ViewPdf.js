@@ -128,18 +128,6 @@ function ViewPdf({ pdfData }) {
     fetchVoices();
   }, []);
 
-  function onDocumentLoadSuccess({ numPages }) {
-    setNumPages(numPages);
-  }
-
-  function nextPage() {
-    setPageNumber((prev) => Math.min(prev + 1, numPages || 1));
-  }
-
-  function prevPage() {
-    setPageNumber((prev) => Math.max(prev - 1, 1));
-  }
-
   const extractTextFromPage = async (page) => {
     try {
       const textContent = await page.getTextContent();
