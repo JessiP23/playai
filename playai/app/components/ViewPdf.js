@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Document, Page } from "react-pdf";
 import Loading from "./Loading";
 import AudioControl from "./Audio";
@@ -13,6 +13,14 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
   import.meta.url,
 ).toString();
+
+// options to prevent to flicker pdf 
+const PDF_OPTIONS = {
+  cMapUrl: 'cmaps/',
+  cMapPacked: true,
+  disableAutoFetch: true,
+  disableStream: true,
+}
 
 function chunkText(text, chunkSize = 10) {
   const words = text.split(/\s+/);
@@ -41,14 +49,14 @@ function ViewPdf({ pdfData }) {
   const [chunks, setChunks] = useState([]);
   const [currentChunkIndex, setCurrentChunkIndex] = useState(0);
   const [chunkCache, setChunkCache] = useState({});
-  const [pdfInstance, setPdfInstance] = useState(null);
 
-  async function loadPdfContent() {
-    if (!pdfData) return;
+  const loadPdfContent = useCallback(async () => {
+    if (!pdfData?.tree) return;
+    
     try {
       setLoading(true);
       setError(null);
-      const node = pdfData.tree?.search(pdfData.tree.root, pageNumber);
+      const node = pdfData.tree.search(pdfData.tree.root, pageNumber);
       if (node) {
         const decompressedContent = await PdfCompress.decompressPdf(node.data);
         const blob = new Blob([decompressedContent], { type: 'application/pdf' });
@@ -60,34 +68,45 @@ function ViewPdf({ pdfData }) {
     } finally {
       setLoading(false);
     }
-  }
+  }, [pdfData?.tree, pageNumber]);
 
   useEffect(() => {
     loadPdfContent();
-  }, [pageNumber, pdfData]);
+  }, [loadPdfContent]);
 
-  const PdfViewer = () => (
+  const handleLoadSuccess = useCallback(async (page) => {
+    try {
+      const textContent = await page.getTextContent();
+      const text = textContent.items.map(item => item.str).join(' ').trim();
+      setPageText(text);
+      setChunks(chunkText(text));
+    } catch (error) {
+      console.error('Error extracting text:', error);
+    }
+  }, []);
+
+  // Memoize the Document onLoadSuccess callback
+  const handleDocumentLoadSuccess = useCallback(({ numPages }) => {
+    setNumPages(numPages);
+  }, []);
+
+  const PdfViewer = useCallback(() => (
     <Document
       file={content}
-      onLoadSuccess={({ numPages }) => setNumPages(numPages)}
+      onLoadSuccess={handleDocumentLoadSuccess}
       loading={<Loading />}
       className="flex justify-center"
+      options={PDF_OPTIONS}
     >
       <Page
         pageNumber={pageNumber}
         scale={scale}
         renderTextLayer={true}
         renderAnnotationLayer={true}
-        onLoadSuccess={async (page) => {
-          // Extract text for audio functionality
-          const textContent = await page.getTextContent();
-          const text = textContent.items.map(item => item.str).join(' ').trim();
-          setPageText(text);
-          setChunks(chunkText(text)); 
-        }}
+        onLoadSuccess={handleLoadSuccess}
       />
     </Document>
-  );
+  ), [content, pageNumber, scale, handleLoadSuccess, handleDocumentLoadSuccess]);
 
   useEffect(() => {
     async function fetchVoices() {
