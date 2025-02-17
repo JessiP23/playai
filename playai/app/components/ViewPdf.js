@@ -156,6 +156,18 @@ function ViewPdf({ pdfData }) {
         // If audio is already loaded, resume playback (no reset currentTime).
         if (audioRef.current.src) {
           await audioRef.current.play();
+          // play immediately next chunks of words
+          const nextChunkOfWords = currentChunkIndex + 1;
+
+          if (nextChunkOfWords < chunks.length) {
+            const nextChunk = chunks[nextChunkOfWords];
+            const cacheKey = `${nextChunk}-${selectedVoice.value}`;
+
+            if (!chunkCache[cacheKey]) {
+              fetchChunkAudio(nextChunk);
+            }
+          }
+
           setLoading(false);
           return;
         }
@@ -165,6 +177,16 @@ function ViewPdf({ pdfData }) {
         const audioUrlForChunk = await fetchChunkAudio(currentChunk);
         audioRef.current.src = audioUrlForChunk;
         await audioRef.current.play();
+
+        // play immediately next chunks of words
+        const nextChunkOfWords = currentChunkIndex + 1;
+        if (nextChunkOfWords < chunks.length) {
+          const nextChunk = chunks[nextChunkOfWords];
+          const cacheKey = `${nextChunk}-${selectedVoice.value}`;
+          if (!chunkCache[cacheKey]) {
+            fetchChunkAudio(nextChunk);
+          }
+        }
       } catch (error) {
         console.error('Error:', error);
         alert(error.message);
@@ -181,19 +203,29 @@ function ViewPdf({ pdfData }) {
   };
 
   const handleChunkEnd = async () => {
-    let nextIndex = currentChunkIndex + 1;
+    const nextIndex = currentChunkIndex + 1;
     if (nextIndex < chunks.length) {
-      try {
-        const nextChunk = chunks[nextIndex];
-        const audioUrlForNextChunk = await fetchChunkAudio(nextChunk);
-        audioRef.current.src = audioUrlForNextChunk;
-        setCurrentChunkIndex(nextIndex);
-        await audioRef.current.play();
-      } catch (error) {
-        console.error('Error playing next chunk:', error);
+      const nextChunk = chunks[nextIndex];
+      const cacheKey = `${nextChunk}-${selectedVoice.value}`;
+      let nextAudioUrl = chunkCache[cacheKey];
+      if (!nextAudioUrl) {
+        // If prefetching did not complete, fetch now.
+        nextAudioUrl = await fetchChunkAudio(nextChunk);
+      }
+      audioRef.current.src = nextAudioUrl;
+      setCurrentChunkIndex(nextIndex);
+      await audioRef.current.play();
+      // Prefetch the subsequent chunk to keep audio seamless.
+      const followingIndex = nextIndex + 1;
+      if (followingIndex < chunks.length) {
+        const followingChunk = chunks[followingIndex];
+        const followingCacheKey = `${followingChunk}-${selectedVoice.value}`;
+        if (!chunkCache[followingCacheKey]) {
+          fetchChunkAudio(followingChunk);
+        }
       }
     } else {
-      // All chunks played—reset if desired.
+      // All chunks played - reset playback if desired.
       setCurrentChunkIndex(0);
       setIsPlaying(false);
     }
