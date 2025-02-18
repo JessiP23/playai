@@ -7,6 +7,42 @@ Height: Always ≤ 1.44 log₂(n+2) - 0.328
  * 
  */
 
+/**
+ * 
+ * Data is compressed
+Page numbers are assigned
+New node is created
+ * 
+ */
+
+/**
+ * 
+ * T1 
+ *   |
+ *     T3
+ * 
+ *     T2
+ * T1      T3
+ * 
+ * Right-Right 
+
+ *   y                  x
+    / \                /  \
+   x   T3     =>     T1   y
+  / \                    /  \
+T1   T2                T2   T3
+ */
+
+/**
+ * 
+ * 
+ * Problem:
+ * Manage multiple pages quick and efficiently
+ * Optimize memory with large PDFs
+ * Maintain page order
+ * 
+ */
+
 export class TreeNodePdf {
     constructor(data, start, end) {
         // Compressed PDF page data
@@ -35,6 +71,10 @@ class PdfAVLTree {
 
     balanceFactor(node) {
         return this.height(node.left) - this.height(node.right);
+
+        // if > 1: left heavy
+        // if < -1: right heavy
+        // if -1, 0, 1: balanced
     }
 
     rotateRight(y) {
@@ -103,6 +143,7 @@ class PdfAVLTree {
 
     search(node, pageNum) {
         if (!node) return null;
+        // search for pdf pages
         if (pageNum >= node.start && pageNum <= node.end) return node;
         if (pageNum < node.start) return this.search(node.left, pageNum);
         return this.search(node.right, pageNum);
