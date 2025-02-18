@@ -160,8 +160,8 @@ static async compressPdfFile(filePdf) {
    // O(n) search time
    const findPage = (pageNum) => pages.find(p => p.number === pageNum);
    ```
-   - ❌ Linear search time
-   - ❌ Poor performance with large documents
+   - Linear search time
+   - Poor performance with large documents
 
 2. **Hash Table Approach**
    ```javascript
@@ -170,8 +170,8 @@ static async compressPdfFile(filePdf) {
    // O(1) but no ordered access
    const findPage = (pageNum) => pageMap.get(pageNum);
    ```
-   - ❌ No ordered access
-   - ❌ No efficient range queries
+   - No ordered access
+   - No efficient range queries
 
 3. **Red-Black Tree**
    ```javascript
@@ -179,8 +179,8 @@ static async compressPdfFile(filePdf) {
    // Less strictly balanced
    // Height can be up to 2 times longer than AVL
    ```
-   - ❌ Less optimal for read-heavy operations
-   - ❌ More complex implementation
+   - Less optimal for read-heavy operations
+   - More complex implementation
 
 4. **AVL Tree (Chosen Solution)**
    ```javascript
@@ -191,9 +191,9 @@ static async compressPdfFile(filePdf) {
        return node;
    }
    ```
-   - ✅ Guaranteed O(log n) performance
-   - ✅ Perfect balance for read operations
-   - ✅ Efficient ordered access
+   - Guaranteed O(log n) performance
+   - Perfect balance for read operations
+   - Efficient ordered access
 
 
 
