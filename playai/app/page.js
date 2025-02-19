@@ -7,9 +7,11 @@ import UploadPdf from "./components/UploadPdf";
 export default function Home() {
   const [pdfData, setPdfData] = useState(null);
 
+  // handle pdf puload data
   const handlePdfUpload = (processedPdf) => {
     setPdfData(processedPdf);
   };
+
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
