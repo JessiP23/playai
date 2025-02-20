@@ -61,6 +61,8 @@ app.post('/api/text-to-speech', async (req, res) => {
         };
         console.log('Text-to-speech request:', options);
 
+
+        // use PlayAI API to generate audio
         const response = await fetch('https://api.play.ai/api/v1/tts/stream', options);
 
         console.log('Text-to-speech response:', response.status);
