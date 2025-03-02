@@ -296,6 +296,8 @@ function ViewPdf({ pdfData }) {
   
           // Prefetch next chunk
           const followingIndex = nextIndex + 1;
+
+          // Prefetch the next chunk of words
           if (followingIndex < chunks.length) {
             const followingChunk = chunks[followingIndex];
             const followingCacheKey = `${followingChunk}-${selectedVoice.value}`;
