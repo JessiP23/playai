@@ -26,9 +26,9 @@ New node is created
  * 
  * Right-Right 
 
- *   y                  x
+ *   y                  29
     / \                /  \
-   x   T3     =>     T1   y
+   x   T3     =>     28   30
   / \                    /  \
 T1   T2                T2   T3
  */

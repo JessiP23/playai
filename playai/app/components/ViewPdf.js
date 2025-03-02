@@ -41,6 +41,8 @@ function ViewPdf({ pdfData }) {
   const [loading, setLoading] = useState(false);
   const [scale, setScale] = useState(1.0);
   const [error, setError] = useState(null);
+  const [showNotification, setShowNotification] = useState(false);
+  const [autoAdvance, setAutoAdvance] = useState(false);
 
   // pass audio control features
   const [isPlaying, setIsPlaying] = useState(false);
@@ -311,6 +313,19 @@ function ViewPdf({ pdfData }) {
         }
         setCurrentChunkIndex(0);
         setIsPlaying(false);
+
+        setShowNotification(true);
+
+        // if autoadvance is enabled, move to the next page
+        if (autoAdvance && pageNumber < numPages) {
+          setTimeout(() => {
+            // move to next page
+            setPageNumber(prev => prev + 1);
+            setShowNotification(false);
+
+            setTimeout(() => handlePlayPause(true), 1000);
+          }, 2000);
+        }
       }
     } catch (error) {
       console.error('Chunk end error:', error);
@@ -407,7 +422,7 @@ function ViewPdf({ pdfData }) {
       </div>
 
       {/* PDF Viewer */}
-      <div className="flex-1 overflow-auto p-4">
+      <div className="flex-1 overflow-auto p-4 relative">
         {loading ? (
           <Loading />
         ) : error ? (
@@ -416,6 +431,35 @@ function ViewPdf({ pdfData }) {
           </div>
         ) : (
           <PdfViewer />
+        )}
+
+{showNotification && (
+          <div className="fixed bottom-20 left-1/2 transform -translate-x-1/2 bg-white shadow-lg rounded-lg p-4 z-10 border border-gray-200 w-80">
+            <div className="flex flex-col items-center">
+              <p className="text-gray-800 mb-3">Audio playback finished</p>
+              <div className="flex space-x-3">
+                <button 
+                  onClick={() => setShowNotification(false)}
+                  className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300"
+                >
+                  Close
+                </button>
+                {pageNumber < numPages && (
+                  <button 
+                    onClick={() => {
+                      setPageNumber(prev => prev + 1);
+                      setShowNotification(false);
+                      // Optional: auto-play the next page after navigation
+                      setTimeout(() => handlePlayPause(true), 500);
+                    }}
+                    className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+                  >
+                    Next Page
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
         )}
       </div>
 
@@ -436,6 +480,18 @@ function ViewPdf({ pdfData }) {
               isPlaying={isPlaying}
               onPlayPause={handlePlayPause}
             />
+            <div className="flex items-center ml-2">
+              <input
+                type="checkbox"
+                id="autoAdvance"
+                checked={autoAdvance}
+                onChange={(e) => setAutoAdvance(e.target.checked)}
+                className="mr-2 h-4 w-4"
+              />
+              <label htmlFor="autoAdvance" className="text-sm text-gray-700">
+                Auto-advance pages
+              </label>
+            </div>
           </div>
           <audio
             ref={audioRef}
